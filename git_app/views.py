@@ -17,11 +17,11 @@ import threading
 load_dotenv()
 
 
-genai.configure(api_key="AIzaSyD03Le05r5qjtUU3X6osXsruuDYJ7jahHw")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 configuration = sib_api_v3_sdk.Configuration()
-configuration.api_key['api-key'] = "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"
+configuration.api_key['api-key'] = os.getenv("BREVO_API_KEY")
 
 api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
 
