@@ -13,6 +13,7 @@ from django.contrib.auth.models import User
 from git_app.models import GitHubRepo, Project, Report
 import schedule
 import threading
+import subprocess
 
 load_dotenv()
 
@@ -42,8 +43,9 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
     if not os.path.exists(dest_folder):
         try:
             git.Repo.clone_from(repo_url, dest_folder)
+            # subprocess.run(['git', 'clone', repo_url, dest_folder])
             print(f"Repository cloned to {dest_folder}")
-        except git.exc.GitCommandError as e:
+        except Exception as e:
             print(f"Error cloning repository: {e}")
             content = f"Error cloning repository: {e}"
     else:
@@ -204,14 +206,35 @@ def analyze_repo(params, output_file):
 
         with open(output_file, 'r', encoding='utf-8') as file:
             content = file.read()
-        
-        prompt = base_prompt.replace("context_here", content)
-        print(f"Prompt: {llm.count_tokens(prompt)}")
-        response = llm.generate_content(prompt)
-        report = response.text
-        print(f"Output: {llm.count_tokens(response.text)}")
-        print("Response generated successfully")
-        return prompt, response.text
+
+        prompts = []
+            
+        total_tokens = llm.count_tokens(content).total_tokens
+        print(f"Total Tokens: {total_tokens}")
+        if total_tokens > 1000000:
+            chunk_size = 1000000
+            chunks = [content[i:i+chunk_size] if i+chunk_size <= len(content) else content[i:] for i in range(0, len(content), chunk_size)]
+            prompts = [base_prompt.replace("context_here", chunk) for chunk in chunks]
+            print(f"Divided into {len(prompts)} prompts")
+        else:
+            prompts.append(base_prompt.replace("context_here", content))
+            # print(f"Prompt: {llm.count_tokens(prompts[-1])}")
+        reports = []
+        for prompt in prompts:
+            print("Generating Response")
+            response = llm.generate_content(prompt)
+            report = response.text
+            reports.append(report)
+            print(f"Output: {llm.count_tokens(response.text)}")
+            print("Wait for 30 seconds")
+            time.sleep(30)  # Wait for 30 seconds before generating the next report
+        if len(reports) > 1:
+            combined_report = "\n\n".join(reports)
+            response = llm.generate_content(f"Combine these Contents and Generate a single one in HTML format ```content : {combined_report}```")
+            reports.append(response.text)
+            print(f"Combined Output: {llm.count_tokens(response.text)}")
+        print("Responses generated successfully")
+        return "\n\n".join(prompts), reports[-1]
     except Exception as e:
         print(f"Error: {e}")
 
@@ -252,7 +275,7 @@ def run_scheduler():
         last_week = today - datetime.timedelta(weeks=1)
         print("Running")
         schedule.run_pending()
-        time.sleep(60*60*24*7)
+        time.sleep(60*60*24)
 
 def index(request):
     return render(request, '../templates/git_app/input_form.html')
