@@ -38,8 +38,15 @@ Configure `gunicorn` and `nginx` for your production environment. Refer to the d
 ## 5. Start Server
 Run the application using your preferred method (e.g., using `gunicorn`):  
 ```bash
-gunicorn --config gunicorn_config.py BetacraftCodeAnalyst.wsgi
+gunicorn --bind 0.0.0.0:8000 --workers 3 BetacraftCodeAnalyst.wsgi:application
 ```
 
 
-## For User Instructions: https://docs.google.com/document/d/1a8b4UVeq3qRsgXUvfWxHNuHsoBVAOYrKBZLnaL_Q9R4/edit?usp=sharing
+# User Instructions
+## Input
+- Usename : Github Username 
+- Repository Name : Repository Name (The Repository you want to Analyze)
+- Contributor : Github Username (If you are not Admin)
+- Token : Github Personal Access Token (with Necessary Permissions)
+- Emails : Email where you want the Report
+
