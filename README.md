@@ -44,7 +44,7 @@ gunicorn --bind 0.0.0.0:8000 --workers 3 BetacraftCodeAnalyst.wsgi:application
 
 # User Instructions
 ## Input
-- Usename : Github Username 
+- Usename : Github Admin Username 
 - Repository Name : Repository Name (The Repository you want to Analyze)
 - Contributor : Github Username (If you are not Admin)
 - Token : Github Personal Access Token (with Necessary Permissions)
