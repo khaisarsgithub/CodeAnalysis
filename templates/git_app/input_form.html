@@ -145,5 +145,33 @@
         
         <button type="submit">Submit</button>
     </form>
+
+    <div id="chatbot">
+        <h2>Chatbot</h2>
+        <div id="chatbot-conversation"></div>
+        <input type="text" id="chatbot-input" placeholder="Type your message here...">
+        <button onclick="sendChatbotMessage()">Send</button>
+    </div>
+    <script>
+        function sendChatbotMessage() {
+            var message = document.getElementById('chatbot-input').value;
+            document.getElementById('chatbot-conversation').innerHTML += "<p>User: " + message + "</p>";
+        fetch('/send_message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message: message }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Success:', data);
+            document.getElementById('chatbot-conversation').innerHTML += "<p>Bot: " + data.response + "</p>";
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+        });
+        }
+    </script>
 </body>
 </html>

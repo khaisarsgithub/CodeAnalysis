@@ -37,6 +37,13 @@ llm = genai.GenerativeModel(
     },
 )
 
+def get_all_active_crons():
+    active_reports = Report.objects.filter(active=True)
+    for report in active_reports:
+        schedule.every().monday.at("00:00").do(clone_repo_and_get_commits, repo_url=report.repository_url, dest_folder=f"./repo/{report.id}")
+
+
+
 def clone_repo_and_get_commits(repo_url, dest_folder):
     content = ""
     # dest_folder = "./repo/" + repo_url.split('/')[-1].replace('.git', '')
@@ -130,7 +137,7 @@ def traverse_and_copy(src_folder, output_file):
         '.png', '.jpg', '.jpeg', '.gif', '.pdf', '.zip', '.exe', '.bin', 
         '.lock', '.generators', '.yml', '.scss', '.css', '.html', '.erb',
         '.sample', '.rake', '.haml']
-    unwanted_files = ['LICENSE', 'README.md', '.dockerignore',  'manifest.js', 'exclude']
+    unwanted_files = ['LICENSE', 'README.md', '.dockerignore',  'manifest.js', 'exclude', 'repositories']
     print("Copying the files")
     print(f"Skipping Extensions {unwanted_extensions} and Files {unwanted_files}.")
     with open(output_file, 'w', encoding='utf-8', errors='ignore') as outfile:
@@ -271,14 +278,49 @@ def send_brevo_mail(subject, html_content, emails):
 # Function to run the schedule in a separate thread
 def run_scheduler():
     while True:
-        today = datetime.date.today()
-        last_week = today - datetime.timedelta(weeks=1)
-        print("Running")
-        schedule.run_pending()
-        time.sleep(60*60*24)
+        now = datetime.datetime.now()
+        days_until_sunday = (6 - now.weekday() + 7) % 7  # 0 if today is Sunday
+        if days_until_sunday == 0:
+            days_until_sunday = 7  # If today is Sunday, wait for next Sunday
+        
+        seconds_until_sunday = days_until_sunday * 24 * 60 * 60
+        print(f"Sleeping for {days_until_sunday} days until next Sunday")
+        time.sleep(seconds_until_sunday)
+        
+        print("Running scheduled tasks")
+        schedule.run_all()
 
 def index(request):
     return render(request, '../templates/git_app/input_form.html')
+
+def send_message(request):
+    chat_history = request.GET.get('chat_history')
+    message = request.GET.get('message')
+    relevent_context = ''
+
+    
+    # Prepare the prompt for the LLM
+    prompt = f"""
+    You are an AI assistant helping with code analysis and development questions.
+    
+    Chat history:
+    {chat_history}
+    
+    User's latest message: {message}
+
+    relevent context: {relevent_context}
+    
+    Based on the chat history and the user's latest message, generate a helpful and relevant response. 
+    If the user is asking about code or development, try to provide specific and accurate information.
+    If you're not sure about something, it's okay to say so.
+    
+    Your response:
+    """
+    # Generate response using the LLM
+    response = llm.generate_content(prompt)
+    # Extract the generated text
+    generated_text = response.text
+    return JsonResponse({'response': generated_text})
            
 def get_weekly_report(request):
     username = request.POST.get('username')
@@ -286,6 +328,7 @@ def get_weekly_report(request):
     contributor = request.POST.get('contributor')
     token = request.POST.get('token')
     emails = request.POST.get('emails')
+    sprint = request.POST.get('sprint')
 
     params = {
         'username': username,

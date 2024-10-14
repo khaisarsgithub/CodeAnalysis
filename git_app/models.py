@@ -47,9 +47,11 @@ class Report(models.Model):
     active = models.BooleanField(default=True)
     frequency = models.CharField(max_length=10, choices=FREQUENCY_CHOICES)
     output = models.TextField()
-    swagger_types = models.CharField(max_length=250, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name
+    
+
+
