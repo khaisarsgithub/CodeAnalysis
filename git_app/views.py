@@ -10,7 +10,7 @@ import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 from dotenv import load_dotenv
 from django.contrib.auth.models import User
-from git_app.models import GitHubRepo, Project, Report
+from git_app.models import GitHubRepo, Project, Report, CronJob
 import schedule
 import threading
 import subprocess
@@ -37,10 +37,53 @@ llm = genai.GenerativeModel(
     },
 )
 
-def get_all_active_crons():
-    active_reports = Report.objects.filter(active=True)
-    for report in active_reports:
-        schedule.every().monday.at("00:00").do(clone_repo_and_get_commits, repo_url=report.repository_url, dest_folder=f"./repo/{report.id}")
+
+# Function to run the schedule in a separate thread
+def run_scheduler():
+    while True:
+        # now = datetime.datetime.now()
+        # days_until_sunday = (6 - now.weekday() + 7) % 7  # 0 if today is Sunday
+        # if days_until_sunday == 0:
+        #     days_until_sunday = 7  # If today is Sunday, wait for next Sunday
+        
+        # seconds_until_sunday = days_until_sunday * 24 * 60 * 60
+        # print(f"Sleeping for {days_until_sunday} days until next Sunday")
+        # time.sleep(seconds_until_sunday)
+        
+        time.sleep(180)
+        print("Running scheduled tasks")
+        schedule.run_all()
+
+# CronJobs in Background
+def start_jobs():
+    try:
+        jobs = CronJob.objects.all()
+        for job in jobs:
+            wsgi_request = HttpRequest()
+            wsgi_request.POST = {
+                'username': job.username,
+                'repo_name': job.repo_name,
+                'contributor': job.contributor,
+                'token': job.token,
+                'emails': job.emails
+            }
+            response = get_weekly_report(wsgi_request)
+            if response.status_code == 200: 
+                print(f"Successfully Analysed {job.repo_name} and Sent Report") 
+            else: 
+                print(f"Something went Wrong while Analysing {job.repo_name}")
+                
+        
+    except Exception as e:
+        print(f"Error: {e}")
+
+# schedule.every().monday.at("01:00").do(start_jobs)
+schedule.every(3).minutes.do(start_jobs)
+print("CronJobs Created")
+# Start a new thread for the scheduler
+scheduler_thread = threading.Thread(target=run_scheduler)
+scheduler_thread.daemon = True  # Daemonize thread so it exits when main program exits
+scheduler_thread.start()
 
 
 
@@ -57,11 +100,15 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
             content = f"Error cloning repository: {e}"
     else:
         print(f"Repository already exists at {dest_folder}. Pulling latest changes...")
-        repo = git.Repo(dest_folder)
-        repo.remotes.origin.pull()
+        try:
+            # Initialize GitPython Repo object
+            print(f"Initializing Repo : {dest_folder}")
+            repo = git.Repo(dest_folder)
+            repo.remotes.origin.pull()
+        except Exception as e:
+            print(f"Error: Pulling {e}")
 
-    # Initialize GitPython Repo object
-    print(f"Initializing Repo : {dest_folder}")
+    
     repo = git.Repo(dest_folder)
 
     # Get the commits from the last week
@@ -87,7 +134,7 @@ def commit_diff(commits):
         print("\n" + "-"*60 + "\n")
         # print("Changes:")
         
-        # Iterate over all files in the commit
+        # Iterating over all files in the commit
         for item in commit.tree.traverse():
             if isinstance(item, git.objects.blob.Blob):
                 file_path = item.path
@@ -275,20 +322,6 @@ def send_brevo_mail(subject, html_content, emails):
         print(f"Unexpected error when sending email: {e}")
         return False, f"An unexpected error occurred while sending the email {e}"
 
-# Function to run the schedule in a separate thread
-def run_scheduler():
-    while True:
-        now = datetime.datetime.now()
-        days_until_sunday = (6 - now.weekday() + 7) % 7  # 0 if today is Sunday
-        if days_until_sunday == 0:
-            days_until_sunday = 7  # If today is Sunday, wait for next Sunday
-        
-        seconds_until_sunday = days_until_sunday * 24 * 60 * 60
-        print(f"Sleeping for {days_until_sunday} days until next Sunday")
-        time.sleep(seconds_until_sunday)
-        
-        print("Running scheduled tasks")
-        schedule.run_all()
 
 def index(request):
     return render(request, '../templates/git_app/input_form.html')
@@ -374,40 +407,33 @@ def get_weekly_report(request):
         if not username or not repo_name:
             raise ValueError("Username and repository name are required")
         print(f"New report created for project '{repo_name}': {response}")
-        emails = ['mdkhaisars118@gmail.com']
-        send_brevo_mail(subject=f"{repo_name} - Prompt Engineering", 
+
+        send_brevo_mail(subject=f"{repo_name}", 
                         html_content=response, 
                         emails=emails)
         
-        today = datetime.date.today()
-        last_week = today - datetime.timedelta(weeks=1)
-        
-        
-        if emails is not None:
-            wsgi_request = HttpRequest()
-            wsgi_request.POST = {
+        job, created_job = CronJob.objects.get_or_create(
+            repo_name=repo_name,
+            defaults={
                 'username': username,
-                'repo_name': repo_name,
                 'contributor': contributor,
                 'token': token,
                 'emails': emails
             }
-            schedule.every().monday.at("01:00").do(get_weekly_report, 
-                        wsgi_request)
-            # schedule.every().minute.do(get_weekly_report, 
-            #             wsgi_request)
-
-            # Start a new thread for the scheduler
-            scheduler_thread = threading.Thread(target=run_scheduler)
-            scheduler_thread.daemon = True  # Daemonize thread so it exits when main program exits
-            scheduler_thread.start()
-            print("CronJob scheduled succesfully")
+        )
+        if created_job:
+            job.save()
+            print("Repository Added to Cronjob Successfully")
         else:
-            print("Emails not provided")
+            job.username = username
+            job.contributor = contributor
+            job.token = token
+            job.emails = emails
+            job.save()
+            print("CronJob already Exists for this Repository, Details Updated")
         
     except Exception as e:
         print(f"Error: {e}")
         return JsonResponse({"status": "Failed"}, status=500)
     
     return JsonResponse({"status": "success"})
-    

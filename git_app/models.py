@@ -54,4 +54,12 @@ class Report(models.Model):
         return self.name
     
 
-
+class CronJob(models.Model):
+    id = models.AutoField(primary_key=True)
+    username = models.CharField(max_length=255)
+    repo_name = models.CharField(max_length=255)
+    contributor = models.CharField(max_length=255)
+    token = models.CharField(max_length=255)
+    emails = models.CharField(max_length=255)
+    
+    

@@ -1,3 +1,7 @@
 weekly.txt
 .env
 repositories/
+CodeAnalysis/__pycache__
+
+git_app/__pycache__
+db.sqlite3
