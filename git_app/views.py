@@ -41,16 +41,22 @@ llm = genai.GenerativeModel(
 # Function to run the schedule in a separate thread
 def run_scheduler():
     while True:
-        # now = datetime.datetime.now()
-        # days_until_sunday = (6 - now.weekday() + 7) % 7  # 0 if today is Sunday
-        # if days_until_sunday == 0:
-        #     days_until_sunday = 7  # If today is Sunday, wait for next Sunday
-        
-        # seconds_until_sunday = days_until_sunday * 24 * 60 * 60
-        # print(f"Sleeping for {days_until_sunday} days until next Sunday")
-        # time.sleep(seconds_until_sunday)
-        
-        time.sleep(180)
+        now = datetime.datetime.now()
+
+        # Calculate the next Monday 12 AM
+        next_monday = now + datetime.timedelta((0 - now.weekday()) % 7)  # 0 represents Monday
+        next_monday_midnight = next_monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Calculate the time difference in seconds
+        time_until_monday_midnight = (next_monday_midnight - now).total_seconds()
+
+        # Print the time we're sleeping for (until next Monday 12 AM)
+        print(f"Sleeping for {time_until_monday_midnight / (60 * 60):.2f} hours until next Monday 12 AM")
+
+        # Sleep until next Monday 12 AM
+        time.sleep(time_until_monday_midnight)
+
+        # Run the scheduled tasks
         print("Running scheduled tasks")
         schedule.run_all()
 
@@ -77,8 +83,8 @@ def start_jobs():
     except Exception as e:
         print(f"Error: {e}")
 
-# schedule.every().monday.at("01:00").do(start_jobs)
-schedule.every(3).minutes.do(start_jobs)
+schedule.every().monday.at("00:00").do(start_jobs)
+# schedule.every(3).minutes.do(start_jobs)
 print("CronJobs Created")
 # Start a new thread for the scheduler
 scheduler_thread = threading.Thread(target=run_scheduler)
@@ -434,6 +440,6 @@ def get_weekly_report(request):
         
     except Exception as e:
         print(f"Error: {e}")
-        return JsonResponse({"status": "Failed"}, status=500)
+        return JsonResponse({"status": "Failed", "error":e}, status=500)
     
     return JsonResponse({"status": "success"})
