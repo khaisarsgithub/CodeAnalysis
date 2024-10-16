@@ -14,6 +14,10 @@ from git_app.models import GitHubRepo, Project, Report, CronJob
 import schedule
 import threading
 import subprocess
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 
@@ -51,13 +55,13 @@ def run_scheduler():
         time_until_monday_midnight = (next_monday_midnight - now).total_seconds()
 
         # Print the time we're sleeping for (until next Monday 12 AM)
-        print(f"Sleeping for {time_until_monday_midnight / (60 * 60):.2f} hours until next Monday 12 AM")
+        logger.info(f"Sleeping for {time_until_monday_midnight / (60 * 60):.2f} hours until next Monday 12 AM")
 
         # Sleep until next Monday 12 AM
         time.sleep(time_until_monday_midnight)
 
         # Run the scheduled tasks
-        print("Running scheduled tasks")
+        logger.info("Running scheduled tasks")
         schedule.run_all()
 
 # CronJobs in Background
@@ -75,17 +79,17 @@ def start_jobs():
             }
             response = get_weekly_report(wsgi_request)
             if response.status_code == 200: 
-                print(f"Successfully Analysed {job.repo_name} and Sent Report") 
+                logger.info(f"Successfully Analysed {job.repo_name} and Sent Report") 
             else: 
-                print(f"Something went Wrong while Analysing {job.repo_name}")
+                logger.info(f"Something went Wrong while Analysing {job.repo_name}")
                 
         
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
 
 schedule.every().monday.at("00:00").do(start_jobs)
 # schedule.every(3).minutes.do(start_jobs)
-print("CronJobs Created")
+logger.info("CronJobs Created")
 # Start a new thread for the scheduler
 scheduler_thread = threading.Thread(target=run_scheduler)
 scheduler_thread.daemon = True  # Daemonize thread so it exits when main program exits
@@ -100,19 +104,19 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
         try:
             git.Repo.clone_from(repo_url, dest_folder)
             # subprocess.run(['git', 'clone', repo_url, dest_folder])
-            print(f"Repository cloned to {dest_folder}")
+            logger.info(f"Repository cloned to {dest_folder}")
         except Exception as e:
-            print(f"Error cloning repository: {e}")
+            logger.info(f"Error cloning repository: {e}")
             content = f"Error cloning repository: {e}"
     else:
-        print(f"Repository already exists at {dest_folder}. Pulling latest changes...")
+        logger.info(f"Repository already exists at {dest_folder}. Pulling latest changes...")
         try:
             # Initialize GitPython Repo object
-            print(f"Initializing Repo : {dest_folder}")
+            logger.info(f"Initializing Repo : {dest_folder}")
             repo = git.Repo(dest_folder)
             repo.remotes.origin.pull()
         except Exception as e:
-            print(f"Error: Pulling {e}")
+            logger.info(f"Error: Pulling {e}")
 
     
     repo = git.Repo(dest_folder)
@@ -123,7 +127,7 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
 
     # Print the commit details
     if not commits:
-        print("No commits found in the last week")
+        logger.info("No commits found in the last week")
         content = "<h2>No commits found in the last week</h2>"
     else:
         content = commit_diff(commits)
@@ -132,13 +136,13 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
 def commit_diff(commits):
     content = ""
     for commit in commits:
-        print("Commmit")
-        print(f"Commit: {commit.hexsha}")
-        print(f"Author: {commit.author.name}")
-        print(f"Date: {commit.committed_datetime}")
-        print(f"Message: {commit.message}")
-        print("\n" + "-"*60 + "\n")
-        # print("Changes:")
+        logger.info("Commmit")
+        logger.info(f"Commit: {commit.hexsha}")
+        logger.info(f"Author: {commit.author.name}")
+        logger.info(f"Date: {commit.committed_datetime}")
+        logger.info(f"Message: {commit.message}")
+        logger.info("\n" + "-"*60 + "\n")
+        # logger.info("Changes:")
         
         # Iterating over all files in the commit
         for item in commit.tree.traverse():
@@ -152,12 +156,12 @@ def commit_diff(commits):
 
         # Parent commits
         parent_shas = [parent.hexsha for parent in commit.parents]
-        print(f"Parent Commits: {', '.join(parent_shas)}")
+        logger.info(f"Parent Commits: {', '.join(parent_shas)}")
         content += f"Parent Commits: {', '.join(parent_shas)} <br>"
         # Commit stats
         stats = commit.stats.total
         # content += str(stats)
-        print(f"Stats: {stats}")
+        logger.info(f"Stats: {stats}")
         # commits_changes = f"""Commit: {commit.hexsha}\n Author: {commit.author.name}\nDate: {commit.committed_datetime}\nMessage: {commit.message}\n
                 # Parent Commits: {', '.join(parent_shas)}\nStats: {stats}"""
 
@@ -166,18 +170,18 @@ def commit_diff(commits):
             diffs = commit.diff(commit.parents[0])
             for diff in diffs:
                 content += f"<br> Changed Files: <br> --- {diff.a_path} ---"
-                print("Difference:")
-                print(f"File: {diff.a_path}")
-                print(f"New file: {diff.new_file}")
-                print(f"Deleted file: {diff.deleted_file}")
-                print(f"Renamed file: {diff.renamed_file}")
-                # print(f"Changes:\n{diff.diff}")
+                logger.info("Difference:")
+                logger.info(f"File: {diff.a_path}")
+                logger.info(f"New file: {diff.new_file}")
+                logger.info(f"Deleted file: {diff.deleted_file}")
+                logger.info(f"Renamed file: {diff.renamed_file}")
+                # logger.info(f"Changes:\n{diff.diff}")
 
                 if diff.diff:
-                    print(diff.diff.decode('utf-8'))#, language='diff')
+                    logger.info(diff.diff.decode('utf-8'))#, language='diff')
 
-            print("\n" + "-"*60 + "\n")
-        # print(f"Content: \n{content}")
+            logger.info("\n" + "-"*60 + "\n")
+        # logger.info(f"Content: \n{content}")
     with open('output.txt', 'w') as f:
         f.write(content)
     return content
@@ -191,8 +195,8 @@ def traverse_and_copy(src_folder, output_file):
         '.lock', '.generators', '.yml', '.scss', '.css', '.html', '.erb',
         '.sample', '.rake', '.haml']
     unwanted_files = ['LICENSE', 'README.md', '.dockerignore',  'manifest.js', 'exclude', 'repositories']
-    print("Copying the files")
-    print(f"Skipping Extensions {unwanted_extensions} and Files {unwanted_files}.")
+    logger.info("Copying the files")
+    logger.info(f"Skipping Extensions {unwanted_extensions} and Files {unwanted_files}.")
     with open(output_file, 'w', encoding='utf-8', errors='ignore') as outfile:
         for root, _, files in os.walk(src_folder):
             for file in files:
@@ -251,7 +255,7 @@ def is_binary(file_path):
                 if b'\0' in chunk:
                     return True
     except Exception as e:
-        print(f"Could not read {file_path} to check if it's binary: {e}")
+        logger.info(f"Could not read {file_path} to check if it's binary: {e}")
     return False
 
 
@@ -270,33 +274,33 @@ def analyze_repo(params, output_file):
         prompts = []
             
         total_tokens = llm.count_tokens(content).total_tokens
-        print(f"Total Tokens: {total_tokens}")
+        logger.info(f"Total Tokens: {total_tokens}")
         if total_tokens > 1000000:
             chunk_size = 1000000
             chunks = [content[i:i+chunk_size] if i+chunk_size <= len(content) else content[i:] for i in range(0, len(content), chunk_size)]
             prompts = [base_prompt.replace("context_here", chunk) for chunk in chunks]
-            print(f"Divided into {len(prompts)} prompts")
+            logger.info(f"Divided into {len(prompts)} prompts")
         else:
             prompts.append(base_prompt.replace("context_here", content))
-            # print(f"Prompt: {llm.count_tokens(prompts[-1])}")
+            # logger.info(f"Prompt: {llm.count_tokens(prompts[-1])}")
         reports = []
         for prompt in prompts:
-            print("Generating Response")
+            logger.info("Generating Response")
             response = llm.generate_content(prompt)
             report = response.text
             reports.append(report)
-            print(f"Output: {llm.count_tokens(response.text)}")
-            print("Wait for 30 seconds")
+            logger.info(f"Output: {llm.count_tokens(response.text)}")
+            logger.info("Wait for 30 seconds")
             time.sleep(30)  # Wait for 30 seconds before generating the next report
         if len(reports) > 1:
             combined_report = "\n\n".join(reports)
             response = llm.generate_content(f"Combine these Contents and Generate a single one in HTML format ```content : {combined_report}```")
             reports.append(response.text)
-            print(f"Combined Output: {llm.count_tokens(response.text)}")
-        print("Responses generated successfully")
+            logger.info(f"Combined Output: {llm.count_tokens(response.text)}")
+        logger.info("Responses generated successfully")
         return "\n\n".join(prompts), reports[-1]
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
 
 # Send Email using Brevo
 def send_brevo_mail(subject, html_content, emails):
@@ -306,7 +310,7 @@ def send_brevo_mail(subject, html_content, emails):
     to = None
     if isinstance(emails, str):
         to = [{"email":email.strip(), "name":email.split("@")[0]} for email in emails.split(',')]
-    print(f"Number of emails: {len(emails)}")
+    logger.info(f"Number of emails: {len(to)}")
     
     # # Create a list of dictionaries for the 'to' parameter
     # to = [{"email": email, "name": email.split("@")[0]} for email in emails]
@@ -318,14 +322,14 @@ def send_brevo_mail(subject, html_content, emails):
     params = {"parameter":"My param value","subject":"New Subject"}
     # for email in emails:
     # to = [{"email":email, "name":email.split("@")[0]}]
-    print(f"To: {to}")
+    logger.info(f"To: {to}")
     try:
         send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(to=to, cc=cc, bcc=bcc, headers=headers, html_content=html_content, sender=sender, subject=subject)
         api_response = api_instance.send_transac_email(send_smtp_email)
-        print(f"Email sent successfully: {api_response}")
+        logger.info(f"Email sent successfully: {api_response}")
         return True, "Email sent successfully"
     except Exception as e:
-        print(f"Unexpected error when sending email: {e}")
+        logger.info(f"Unexpected error when sending email: {e}")
         return False, f"An unexpected error occurred while sending the email {e}"
 
 
@@ -379,7 +383,7 @@ def get_weekly_report(request):
 
     try:
         repo_url = f"https://{token}@github.com/{username}/{repo_name}.git" if token else f"https://github.com/{username}/{repo_name}.git"
-        print(f"Analyzing repo: {repo_url}")
+        logger.info(f"Analyzing repo: {repo_url}")
             
         dest_folder = f"repositories/{username}/{repo_name}"
 
@@ -387,7 +391,7 @@ def get_weekly_report(request):
         frameworks = detect_framework(dest_folder)
         traverse_and_copy(dest_folder, 'weekly.txt')
         params['framework'] = ''.join(frameworks)
-        print(f"Framework: {''.join(frameworks)}")
+        logger.info(f"Framework: {''.join(frameworks)}")
         prompt, response = analyze_repo(params, 'weekly.txt')
 
         user, created_user = User.objects.get_or_create(username=username)
@@ -412,7 +416,7 @@ def get_weekly_report(request):
             report.save()
         if not username or not repo_name:
             raise ValueError("Username and repository name are required")
-        print(f"New report created for project '{repo_name}': {response}")
+        logger.info(f"New report created for project '{repo_name}': {response}")
 
         send_brevo_mail(subject=f"{repo_name}", 
                         html_content=response, 
@@ -429,17 +433,17 @@ def get_weekly_report(request):
         )
         if created_job:
             job.save()
-            print("Repository Added to Cronjob Successfully")
+            logger.info("Repository Added to Cronjob Successfully")
         else:
             job.username = username
             job.contributor = contributor
             job.token = token
             job.emails = emails
             job.save()
-            print("CronJob already Exists for this Repository, Details Updated")
+            logger.info("CronJob already Exists for this Repository, Details Updated")
         
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
         return JsonResponse({"status": "Failed", "error":e}, status=500)
     
     return JsonResponse({"status": "success"})
