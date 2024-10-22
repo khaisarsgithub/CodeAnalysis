@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Betacraft Repository Analysis</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 20%;
+            background-color: #2b2b2b;
+            color: white;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar h2 {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            color: white;
+        }
+
+        .sidebar a {
+            color: white;
+            text-decoration: none;
+            margin: 10px 0;
+            display: block;
+        }
+
+        .sidebar a:hover {
+            text-decoration: underline;
+        }
+
+        .form-container {
+            width: 80%;
+            padding: 40px;
+        }
+
+        h1 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        .form-control {
+            margin-bottom: 15px;
+        }
+
+        .btn-primary {
+            background-color: black;
+            border-color: black;
+        }
+
+        .btn-primary:hover {
+            background-color: grey;
+            border-color: grey;
+        }
+
+        /* Modal Styles */
+        #modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        #modal p {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>Repositories - Sprint Running</h2>
+        {% for cronjob in cronjobs %}
+        <a href="#">{{ cronjob.repo_name }}</a>
+        {% endfor %}
+    </div>
+
+    <!-- Form Container -->
+    <div class="form-container">
+        <h1>Betacraft Repository Analysis</h1>
+        <form id="repoForm" method="post" action="{% url 'weekly_report' %}" onsubmit="handleSubmit(event)">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="username">Username:</label>
+                <input type="text" class="form-control" id="username" name="username" required>
+            </div>
+            <div class="mb-3">
+                <label for="repo_name">Repository Name:</label>
+                <input type="text" class="form-control" id="repo_name" name="repo_name" required>
+            </div>
+            <div class="mb-3">
+                <label for="contributor">Contributor:</label>
+                <input type="text" class="form-control" id="contributor" name="contributor" required>
+            </div>
+            <div class="mb-3">
+                <label for="token">Token:</label>
+                <input type="text" class="form-control" id="token" name="token" required>
+            </div>
+            <div class="mb-3">
+                <label for="emails">Emails (comma-separated):</label>
+                <input type="text" class="form-control" id="emails" name="emails" required>
+            </div>
+            {% comment %} <div class="mb-3">
+                <label for="model">Model:</label>
+                <input type="text" class="form-control" id="model" name="model" required>
+            </div> {% endcomment %}
+            <button type="submit" class="btn btn-primary w-100">Submit</button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal for messages -->
+<div id="modal">
+    <p id="modalMessage"></p>
+    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+</div>
+
+<script>
+    // Handle form submission
+    function handleSubmit(event) {
+        event.preventDefault();
+        // showLoader();
+        showModal("Analyzing Repository...this may take 2-3 minutes")
+
+        const formData = new FormData(event.target);
+        fetch(event.target.action, {
+            method: event.target.method,
+            body: formData,
+        })
+        .then(response => {
+            if (response.ok) {
+                showModal("CronJob Scheduled successfully");
+            } else {
+                return response.text().then(text => { throw new Error(text); });
+            }
+        })
+        .catch(error => {
+            showModal("Error: " + error.message);
+        })
+        .finally(() => {
+            hideLoader();
+        });
+    }
+
+    // Function to show modal with a message
+    function showModal(message) {
+        document.getElementById('modalMessage').innerText = message;
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    // Function to close the modal
+    function closeModal() {
+        document.getElementById('modal').style.display = 'none';
+    }
+</script>
+
+</body>
+</html>
