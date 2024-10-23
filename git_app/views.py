@@ -65,6 +65,54 @@ gemini = genai.GenerativeModel(
     },
 )
 
+def test_repo_access(repo_owner, repo_name, token):
+    # Base URL for the repo
+    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}"
+    
+    # Headers with authentication
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/vnd.github.v3+json',
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    
+    logger.info(f"Testing access to: {url}")
+    
+    try:
+        # Test repository access
+        response = requests.get(url, headers=headers)
+        logger.info(f"Status Code: {response.status_code}")
+        status_code = response.status_code
+        
+        if response.status_code == 404:
+            logger.info("Repository not found! Please check:")
+            logger.info("1. Repository owner name is correct")
+            logger.info("2. Repository name is correct")
+            logger.info("3. Repository exists and is not private")
+            logger.info(f"4. Full repo path: {repo_owner}/{repo_name}")
+            status_code = response.status_code
+            raise ValueError("Invalid Repository")
+        elif response.status_code == 401:
+            logger.info("Authentication failed! Please check your token.")
+            status_code = response.status_code
+            raise ValueError("Authentication failed! Please check your token.")
+        elif response.status_code == 200:
+            logger.info("Repository found and accessible!")
+            repo_info = response.json()
+            logger.info(f"\nRepository Details:")
+            logger.info(f"Full Name: {repo_info['full_name']}")
+            logger.info(f"Visibility: {repo_info['visibility']}")
+            logger.info(f"Default Branch: {repo_info['default_branch']}")
+            status_code = response.status_code
+        else:
+            logger.info(f"Unexpected status: {response.status_code}")
+            logger.info(f"Response: {response.text}")
+            status_code = response.status_code
+            raise ValueError(response.text)
+        return status_code, "Success"
+    except Exception as e:
+        logger.info(f"Error: {str(e)}")
+        return status_code, str(e)
 
 # Function to run the schedule in a separate thread
 def run_scheduler():
@@ -128,6 +176,7 @@ def get_code_changes(repo_owner, repo_name, token):
     # Calculate date range for last week
     end_date = datetime.datetime.now(pytz.utc)
     start_date = end_date - datetime.timedelta(days=7)
+    
     logger.info(f"Token: {token}")
     
     # Format dates for GitHub API
@@ -135,14 +184,16 @@ def get_code_changes(repo_owner, repo_name, token):
     until = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
     
     headers = {
-        'Authorization': f'token {token}',
-        'Accept': 'application/vnd.github.v3+json'
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/vnd.github.v3+json',
+        "X-GitHub-Api-Version": "2022-11-28"
     }
     content = ''
     
     try:
         # Get commits from last week
         commits_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits"
+        logger.info(f"Fetching commits from URL: {commits_url}?since={since}&until={until}")
         response = requests.get(
             commits_url,
             headers=headers,
@@ -638,6 +689,9 @@ def get_weekly_report(request):
             
         dest_folder = f"repositories/{username}/{repo_name}"
 
+        status, message = test_repo_access(username, repo_name, token)
+        if status != 200:
+            return JsonResponse({"message": message}, status=status)
         # content = clone_repo_and_get_commits(repo_url, dest_folder, params)
         content = get_code_changes(username, repo_name, token)
         
@@ -652,7 +706,7 @@ def get_weekly_report(request):
         content = content['content']
         if not content:
             logger.error("No content retrieved from get_code_changes.")
-            return JsonResponse({"message": "No content retrieved from the repository."}, status=400)
+            return JsonResponse({"message": "No content retrieved from the repository, No Commits Found"}, status=400)
 
         logger.info(f"Content: {len(content)}")
         prompts, response = analyze_repo(params, content)
@@ -730,6 +784,7 @@ def get_weekly_report(request):
         return JsonResponse({"status": "Failed", "error": str(e)}, status=500)
     
     return JsonResponse({"status": "success"})
+
 
 
 

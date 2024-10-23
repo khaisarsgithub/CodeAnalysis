@@ -162,7 +162,7 @@
             }
         })
         .catch(error => {
-            showModal("Error: " + error.message);
+            showModal(error.message);
         })
         .finally(() => {
             hideLoader();
