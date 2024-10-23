@@ -4,7 +4,7 @@ from django.shortcuts import render
 import git
 import datetime
 import os
-from git_app.prompts import base_prompt
+from git_app.prompts import base_prompt, sprint_prompt
 import google.generativeai as genai
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
@@ -15,10 +15,10 @@ import schedule
 import threading
 import subprocess
 import logging
-from openai import OpenAI
-from anthropic import Anthropic
+# from openai import OpenAI
+# from anthropic import Anthropic
 import json
-from llamaapi import LlamaAPI
+# from llamaapi import LlamaAPI
 import tiktoken
 
 from django.contrib.auth import authenticate, login, logout
@@ -27,7 +27,11 @@ from django.contrib.auth.models import User
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-
+import requests
+import pytz
+from typing import Dict
+import base64
+from urllib.parse import quote
 
 
 load_dotenv()
@@ -45,9 +49,9 @@ api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(co
 
 
 # Configuring API keys for LLMs
-llama = LlamaAPI(os.getenv("LLAMA_API_KEY"))
-gpt = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-claude_sonet = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# llama = LlamaAPI(os.getenv("LLAMA_API_KEY"))
+# gpt = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# claude_sonet = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 gemini = genai.GenerativeModel(
@@ -120,9 +124,107 @@ scheduler_thread = threading.Thread(target=run_scheduler)
 scheduler_thread.daemon = True  # Daemonize thread so it exits when main program exits
 scheduler_thread.start()
 
+def get_code_changes(repo_owner, repo_name, token):
+    # Calculate date range for last week
+    end_date = datetime.datetime.now(pytz.utc)
+    start_date = end_date - datetime.timedelta(days=7)
+    logger.info(f"Token: {token}")
+    
+    # Format dates for GitHub API
+    since = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    until = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    content = ''
+    
+    try:
+        # Get commits from last week
+        commits_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits"
+        response = requests.get(
+            commits_url,
+            headers=headers,
+            params={'since': since, 'until': until}
+        )
+        response.raise_for_status()
+        commits = response.json() 
+        for commit in commits:
+            # Get detailed commit info with patch data
+            commit_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits/{commit['sha']}"
+            commit_response = requests.get(commit_url, headers=headers)
+            commit_response.raise_for_status()
+            commit_detail = commit_response.json()
+            
+            # Print commit header
+            logger.info(f"Commit: {commit['sha'][:7]}")
+            logger.info(f"Author: {commit['commit']['author']['name']}")
+            logger.info(f"Date: {commit['commit']['author']['date']}")
+            logger.info(f"Message: {commit['commit']['message']}")
+            
+            content += f"Commit: {commit['sha'][:7]}"
+            content += f"Author: {commit['commit']['author']['name']}"
+            content += f"Date: {commit['commit']['author']['date']}"
+            content += f"Message: {commit['commit']['message']}"
+            
+            logger.info("\nChanges:")
+            
+            # Process each file in the commit
+            for file in commit_detail['files']:
+                logger.info(f"\nFile: {file['filename']}")
+                logger.info(f"Status: {file['status']}")
+                logger.info(f"Changes: +{file['additions']} -{file['deletions']}")
 
+                content += f"\nFile: {file['filename']}"
+                content += f"Status: {file['status']}"
+                content += f"Changes: +{file['additions']} -{file['deletions']}"
+                
+                if 'patch' in file:
+                    # Format and print the patch data
+                    logger.info("\nDiff:")
+                    patch_lines = file['patch'].split('\n')
+                    for line in patch_lines:
+                        if line.startswith('+'):
+                            logger.info(f"\033[92m{line}\033[0m")  # Green for additions
+                        elif line.startswith('-'):
+                            logger.info(f"\033[91m{line}\033[0m")  # Red for deletions
+                        else:
+                            logger.info(line)
+                        content += line
+                else:
+                    logger.info("No diff available (file might be binary or too large)")
+                
+            logger.info("\n" + "="*80 + "\n")
 
-def clone_repo_and_get_commits(repo_url, dest_folder):
+        logger.info(f"Content before: {len(content)}")
+        res = {
+            "status" : True,
+            "content" : content
+        }
+        return res
+    
+    except Exception as e:
+        logger.info(f"Error: {e}")
+        res = {
+            "status" : False,
+            "content" : str(e)
+        }
+        return res
+    
+
+def get_file_content(repo_owner: str, repo_name: str, file_path: str, commit_sha: str, headers: Dict) -> str:
+    """Helper function to get file content at a specific commit"""
+    url = f'https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{quote(file_path)}'
+    response = requests.get(url, headers=headers, params={'ref': commit_sha})
+    
+    if response.status_code == 200:
+        content = response.json()
+        if content.get('encoding') == 'base64':
+            return base64.b64decode(content['content']).decode('utf-8')
+    return None
+
+def clone_repo_and_get_commits(repo_url, dest_folder, params):
     content = ""
     # dest_folder = "./repo/" + repo_url.split('/')[-1].replace('.git', '')
     if not os.path.exists(dest_folder):
@@ -139,15 +241,19 @@ def clone_repo_and_get_commits(repo_url, dest_folder):
             # Initialize GitPython Repo object
             logger.info(f"Initializing Repo : {dest_folder}")
             repo = git.Repo(dest_folder)
-            repo.git.config('remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*')
-            origins = repo.remotes.origin.fetch()
+            token_url = f"https://{params['contributor']}:{params['token']}@github.com/{params['username']}/{params['repo_name']}"
+            logger.info(f"Token URL: {token_url}")
+            repo.remotes.origin.set_url(token_url)
+            # repo.git.checkout('test')  # Switch to the test branch
+            repo.remotes.origin.fetch()
             repo.remotes.origin.pull()
+            logger.info("Pull complete on test branch")
         except Exception as e:
             logger.info(f"Error: Pulling {e}")
     
 
-    
-    repo = git.Repo(dest_folder)
+    if repo is None:
+        repo = git.Repo(dest_folder)
 
     # Get the commits from the last week
     last_week = datetime.datetime.now() - datetime.timedelta(weeks=1)
@@ -225,6 +331,7 @@ def traverse_and_copy(src_folder, output_file):
         '.lock', '.generators', '.yml', '.scss', '.css', '.html', '.erb',
         '.sample', '.rake', '.haml']
     unwanted_files = ['LICENSE', 'README.md', '.dockerignore',  'manifest.js', 'exclude', 'repositories']
+    unwanted_folders = ['assets']
     logger.info("Copying the files")
     logger.info(f"Skipping Extensions {unwanted_extensions} and Files {unwanted_files}.")
     with open(output_file, 'w', encoding='utf-8', errors='ignore') as outfile:
@@ -289,7 +396,7 @@ def is_binary(file_path):
     return False
 
 # Chunking Prompt into LLM context length
-def manage_prompt_size(content, model="gemini"):
+def manage_prompt_size(content, model):
     gemini_max_tokens = 1000000
     gpt_max_tokens = 32000
     llama3_max_tokens = 128000
@@ -300,6 +407,8 @@ def manage_prompt_size(content, model="gemini"):
     chunks = None
     if model is None:
         model = "gemini"
+    
+    logger.info(f"Content: {content}")
     try:
         if model.lower() == "gemini":
             max_tokens = gemini_max_tokens
@@ -324,10 +433,10 @@ def manage_prompt_size(content, model="gemini"):
         if total_tokens > max_tokens:
             chunk_size = max_tokens
             chunks = [content[i:i+chunk_size] if i+chunk_size <= len(content) else content[i:] for i in range(0, len(content), chunk_size)]
-            prompts = [base_prompt.replace("context_here", chunk) for chunk in chunks]
+            prompts = [sprint_prompt.replace("context_here", chunk) for chunk in chunks]
             logger.info(f"Divided into {len(prompts)} prompts")
         else:
-            prompts.append(base_prompt.replace("context_here", content))
+            prompts.append(sprint_prompt.replace("context_here", content))
             if model == "gpt-3.5-turbo":
                 total_tokens = len(encoding.encode(content))
             else:
@@ -342,7 +451,7 @@ def manage_prompt_size(content, model="gemini"):
         return content_chunks
         
 
-def analyze_repo(params, output_file):
+def analyze_repo(params, content):
     try:
         username = params['username']
         repo_name = params['repo_name']
@@ -351,8 +460,6 @@ def analyze_repo(params, output_file):
         model = params['model']
         if model is None:
             model = "gemini"
-
-        content = output_file
         # content = ''
         # with open(output_file, 'r', encoding='utf-8') as file:
         #     content = file.read()
@@ -466,26 +573,6 @@ def send_brevo_mail(subject, html_content, emails):
         logger.info(f"Unexpected error when sending email: {e}")
         return False, f"An unexpected error occurred while sending the email {e}"
 
-def user_logout(request):
-    logout(request)
-    # request.session.flush()  # Clears all session data
-    return redirect('user_login')
-
-def user_login(request):    
-    if request.method == 'POST':
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        logger.info("POST request Success")
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return redirect('index', username=username)
-        else:
-            logger.info("Invalid username or password")
-            return render(request, '../templates/git_app/login.html', {"login": False, "message": "Username or password invalid"})
-    else:
-        return render(request, '../templates/git_app/login.html', {})
-    
 
 @api_view(['GET'])
 def index(request):
@@ -551,24 +638,23 @@ def get_weekly_report(request):
             
         dest_folder = f"repositories/{username}/{repo_name}"
 
-        content = clone_repo_and_get_commits(repo_url, dest_folder)
-        if content is None:
-            logger.info("No Commits Found in last week")
-            return JsonResponse({"message": "No Commits Found in Last Week, The Repository added to Sprint Successfully"}, status=200)
-            
-            # try:
-            #     cron, create_cron = CronJob.objects.get_or_create(repo_name=f"{username}/{repo_name}")
-            #     if create_cron:
-            #         cron.save()
-            #         logger.info("Added to Cronjob")
-            #         return JsonResponse("No Commits Found in Last Week, The Repository added to Sprint Successfully", status=422)
-            # except Exception as e:
-            #     logger.info(f"Error: {e}")
-            # return JsonResponse({"message":"Failed Adding the Repository to Sprint"}, status=422)
-        # frameworks = detect_framework(dest_folder)
-        # traverse_and_copy(dest_folder, 'weekly.txt')
-        # params['framework'] = ''.join(frameworks)
-        # logger.info(f"Framework: {''.join(frameworks)}")
+        # content = clone_repo_and_get_commits(repo_url, dest_folder, params)
+        content = get_code_changes(username, repo_name, token)
+        
+        # Check if content is valid
+        if content['status'] is False:
+            logger.info(content['content'])
+            if '401' in content['content']:
+                return JsonResponse({"message": "Invalid Token or Permissions not granted"}, status=401)
+            return JsonResponse({"message": content['content']}, status=400)
+
+        # Ensure content is not empty
+        content = content['content']
+        if not content:
+            logger.error("No content retrieved from get_code_changes.")
+            return JsonResponse({"message": "No content retrieved from the repository."}, status=400)
+
+        logger.info(f"Content: {len(content)}")
         prompts, response = analyze_repo(params, content)
         if prompts is None:
             logger.info("Prompts are None")
@@ -635,11 +721,16 @@ def get_weekly_report(request):
             job.save()
             logger.info("CronJob already Exists for this Repository, Details Updated")
         
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401:
+            logger.info("401 Unauthorized error encountered. Please check your credentials.")
+            return JsonResponse({"status": "Failed", "error": "401 Unauthorized"}, status=401)
     except Exception as e:
         logger.info(f"Error: {e}")
         return JsonResponse({"status": "Failed", "error": str(e)}, status=500)
     
     return JsonResponse({"status": "success"})
+
 
 
 
