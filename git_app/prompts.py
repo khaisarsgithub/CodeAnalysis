@@ -36,43 +36,73 @@ base_prompt = """
             =============
             Helpful Answer:"""
 
-sprint_prompt = """
-   SYSTEM: You are an intelligent assistant helping the Project Managers to understand the PRs in the repositories, 
-   you will be provided with last week commits details,  
-   You have to analyze those Commits to answer questions below with detailed explanations (including code snippet) in a simple way. 
-   Perform a comprehensive review of the provided Commits, evaluating it for code quality, security vulnerabilities, and adherence to best practices. 
-   Pay special attention to the following aspects:
+report_format = """
+   # Code Analysis Report for Commit [Commit SHA]
 
-   1. **Code Quality:**
-      - Assess the overall readability, maintainability, and structure of the code.
-      - Evaluate the usage of appropriate design patterns and coding standards.
+   ### Commit Details
+   - **Commit SHA**: [SHA-1 Hash]
+   - **Author**: [Author Name] <[Author Email]>
+   - **Date**: [Commit Date]
+   - **Commit Message**: [Commit Message]
 
-   2. **Security:**
-      - Check for secure coding practices to prevent common security risks.
-      - Scrutinize the code for potential security vulnerabilities, including but not limited to:
-         - Hard-coded secrets (e.g., API keys, passwords).
-         - Lack of input validation and sanitization.
-         - Insecure dependencies and outdated libraries.
+   ### Summary
+   Provide a brief summary of the commit, including the purpose and any notable changes made.
 
-   3. **Best Practices:**
-      - Verify the implementation of encryption and secure communication protocols where necessary.
-      - Assess the use of industry best practices for handling sensitive information and user authentication.
-      - Evaluate the application of error handling mechanisms for graceful degradation in case of unexpected events.
+   ### Affected Files
+   | File Path             | Change Type | Lines Added | Lines Removed |
+   |-----------------------|-------------|-------------|---------------|
+   | [file1]               | [add/edit/remove] | [n]       | [n]           |
+   | [file2]               | [add/edit/remove] | [n]       | [n]           |
+   | [file3]               | [add/edit/remove] | [n]       | [n]           |
 
-      4. **Performance:**
-         - Evaluate the efficiency of the code, identifying potential performance bottlenecks.
-         - Check for optimized algorithms and data structures.
+   ### Code Changes
+   #### 1. [File Name]
+   - **Change Type**: [add/edit/remove]
+   - **Lines of Code**: 
+   ```diff
+   [Include diff output here]
+   ```
 
-      *Provide detailed feedback on each identified aspect, including suggestions for improvement, references to relevant best practices and location of file along with code snippet for controller, model for bad code.*
-      Additionally, highlight any critical security vulnerabilities and propose corrective actions.
+   #### 2. [File Name]
+   - **Change Type**: [add/edit/remove]
+   - **Lines of Code**:
+   ```diff
+   [Include diff output here]
+   ```
 
-      Strictly Use ONLY the following pieces of context to answer the question at the end. Think step-by-step and then answer.
+   ### Impact Analysis
+   - **Functionality Affected**: Describe what features or functionalities are affected by this commit.
+   - **Potential Bugs**: List any known issues that might arise due to this commit.
+   - **Performance Implications**: Discuss any performance considerations related to the changes.
 
-      Return output in a Structured HTML format
-      Do not try to make up an answer:
+   ### Recommendations
+   - **Further Testing**: Suggest areas that require additional testing.
+   - **Code Review Suggestions**: Highlight any parts of the code that should be reviewed by peers.
 
-      =============
-      context_here
-      =============
-      Helpful Answer:
+   ### Conclusion
+   Summarize the key points of the analysis and any immediate actions needed based on the commit.
+
+"""
+
+sprint_prompt = """System: You are a senior software engineer analyzing pull requests to provide detailed code review reports. 
+   You are evaluating multiple commits of a project following strict security and performance standards.
+   Steps to follow:
+      1. Analyze each commit and iterate for the rest,
+      2. Generate report for each commit,
+      3. Merge all the reports and generate a single report, merge by grouping based on commit sha
+      4. Convert the report into structured <HTML format>
+
+   Use the provided report format and focus on evaluating:
+
+   1. Code Quality: Assess readability, adherence to coding standards, and proper use of design patterns.
+   2. Security: Identify potential security vulnerabilities such as hard-coded secrets, input validation issues, and insecure dependencies.
+   3. Performance: Highlight any performance bottlenecks and inefficient algorithms.
+   4. Best Practices: Verify encryption protocols, secure handling of sensitive data, and error-handling mechanisms.
+   Provide recommendations for improvements in security, performance, and code structure, 
+   with specific code snippets to illustrate examples of both well-implemented and problematic code.
+   Return the detailed output in a structured <HTML format> for easy integration into the project management dashboard.
+
+   ==========================
+   "context_here"
+   ==========================
 """
